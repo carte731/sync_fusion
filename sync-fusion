@@ -1,1 +1,88 @@
 #!/bin/bash
+
+# Grabbing current context
+HOME=$(pwd -P)
+
+# Setting cFS workspace
+CFS="$HOME/cFS"
+
+# Setting ROS2 workspace
+ROS2="$HOME"/ROS2
+
+# Setting ROS1 workspace
+ROS1="$HOME"/ROS1
+
+# Setting misc workspace
+MISC="$HOME/misc"
+
+# Making paths to workspaces readonly - this prevents accidently overwritting of variables
+readonly \
+    CFS \
+    ROS2 \
+    ROS1 \
+    MISC
+
+# Initial install of the Docker image and cFS
+init_install(){
+    cd $HOME
+    git submodule init
+    git submodule update
+
+    echo "$CFS_DOCKER" > "$CFS/Dockerfile.cFS"
+
+    docker build -f $HOME/Dockerfile.main -t sync_fusion/builder .
+    docker build -f $CFS/Dockerfile.cFS -t sync_fusion/builder .
+}
+
+# Updates the Image if user adds new apps to ROS2, ROS1 or cFS 
+update(){
+    
+}
+
+# Prints/STDOUT the input commands for the shell script
+help(){
+
+}
+
+# Runs the Docker containers through segmented docker-compose files
+run(){
+
+}
+
+# Exports the Docker image for embedded systems or systems without internet
+export_img(){
+
+}
+
+# Runs annotation on user image data
+annotation(){
+
+}
+
+# A wrapper that runs the human signal dev environment in the Docker conatiner
+humanSignal(){
+
+}
+
+# Main that parses the user input
+main(){
+    init_install()
+}
+
+## DOCKER FILE TEMPLATES FOR INITIAL APPS
+CFS_DOCKER="
+FROM sync_fusion/builder AS builder
+
+RUN git clone https://github.com/nasa/cFS.git
+RUN cd cFS
+RUN git submodule init
+RUN git submodule update
+
+COPY cfe/cmake/Makefile.sample Makefile
+COPY -r cfe/cmake/sample_defs sample_defs
+
+RUN sed -i 's/undef OSAL_DEBUG_PERMISSIVE_MODE/define OSAL_DEBUG_PERMISSIVE_MODE/g' sample_defs/default_osconfig.h
+"
+
+# Runs the main function on start-up
+main

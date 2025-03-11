@@ -1,0 +1,14 @@
+# TO-DO Change to minimum ROS build in
+FROM ros:humble-perception AS builder
+
+# Selecting shell
+SHELL ["/bin/bash", "-c"]
+
+# Creating image space for cFS swapping
+RUN mkdir /root/img_data
+
+# Create ros2_ws space
+WORKDIR /root/ros2_ws
+
+# Run a default command, e.g., starting a bash shell
+CMD ["bash"]
