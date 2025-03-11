@@ -1,0 +1,18 @@
+[submodule "cFS/apps/ci_lab"]
+	path = cFS/apps/ci_lab
+	url = git@github.com:nasa/ci_lab.git
+[submodule "cFS/apps/sample_app"]
+	path = cFS/apps/sample_app
+	url = git@github.com:nasa/sample_app.git
+[submodule "cFS/apps/sample_lib"]
+	path = cFS/apps/sample_lib
+	url = git@github.com:nasa/sample_lib.git
+[submodule "cFS/apps/sch_lab"]
+	path = cFS/apps/sch_lab
+	url = git@github.com:nasa/sch_lab.git
+[submodule "cFS/apps/to_lab"]
+	path = cFS/apps/to_lab
+	url = git@github.com:nasa/to_lab.git
+[submodule "cFS/apps/sync_node_lib"]
+	path = cFS/apps/sync_node_lib
+	url = git@github.com:carte731/sync_node_lib.git
