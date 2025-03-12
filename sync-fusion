@@ -23,65 +23,208 @@ readonly \
     MISC
 
 # Initial install of the Docker image and cFS
-init_install(){
+init_install() {
+    ## INITIAL SETUP
+    # Downloads repo's submodules
     cd $HOME
     git submodule init
     git submodule update
 
-    echo "$CFS_DOCKER" > "$CFS/Dockerfile.cFS"
+    ## GENERATING DOCKERFILS
+    # Creates default cFS Dockerfile
+    echo "$CFS_DOCKER" > "$CFS/Dockerfile.syncfusion.cFS"
 
-    docker build -f $HOME/Dockerfile.main -t sync_fusion/builder .
-    docker build -f $CFS/Dockerfile.cFS -t sync_fusion/builder .
+    # Creates default YOLO-ROS Dockerfile
+    echo "$YOLO_ROS" > "$ROS2/yolo_ros/Dockerfile.syncfusion.yoloROS"
+
+    # Creates default Sync-Node Dockerfile
+    echo "$SYNC_NODE" > "$ROS2/sync_node/Dockerfile.syncfusion.syncnode"
+
+    # Creates default JAXA-RACS2 Dockerfile
+    # TO-DO: Needs to be updated first for full YOLO and image transfers
+    #echo "$RACS2_ROS" > "$ROS2/Dockerfile.syncfusion.racs2"
+
+    ## BUILDING DOCKER IMAGE
+    # Builds Docker base image for sync_fusion
+    docker build -f $HOME/Dockerfile.syncfusion.main -t sync_fusion .
+
+    # Adds cFS onto the base Docker image
+    docker build -f $CFS/Dockerfile.syncfusion.cFS -t sync_fusion .
+
+    ## INSTALLING ROS2 NODES
+    # Retrieving all the Dockerfiles in ROS2 that follow proper naming scheme
+    readarray -t ros2_app_array < <(find ./ROS2/ -iname "Dockerfile.syncfusion.*")
+
+    # Installs all nodes in ROS2 directory that follow proper naming convention for sync_fusion
+    for dockerfile in ${ros2_app_array[@]}; do
+        docker build -f "${dockerfile}" -t sync_fusion .
+    done
+
+    ## INSTALLING ROS1 NODES
+    ## TO-DO: ADD ROS1 APP & TEST
+    # Retrieving all the Dockerfiles in ROS1 that follow proper naming scheme
+    #readarray -t ros1_app_array < <(find ./ROS1/ -iname "Dockerfile.syncfusion.*")
+
+    # Installs all nodes in ROS2 directory that follow proper naming convention for sync_fusion
+    #for dockerfile in ${ros1_app_array[@]}; do
+    #    docker build -f "${dockerfile}" -t sync_fusion/builder .
+    #done
+
+    # Removing dangling images from image construction
+    echo "\n\nRemoving dangling Docker images from image construction..\n\n"
+
+    docker rmi $(docker images -f "dangling=true" -q)
+
 }
 
 # Updates the Image if user adds new apps to ROS2, ROS1 or cFS 
-update(){
-    
+update() {
+    echo ""
 }
 
 # Prints/STDOUT the input commands for the shell script
-help(){
-
+help() {
+    echo ""
 }
 
 # Runs the Docker containers through segmented docker-compose files
-run(){
-
+run() {
+    echo ""
 }
 
 # Exports the Docker image for embedded systems or systems without internet
-export_img(){
-
+export_img() {
+    echo ""
 }
 
 # Runs annotation on user image data
-annotation(){
-
+annotation() {
+    echo ""
 }
 
 # A wrapper that runs the human signal dev environment in the Docker conatiner
-humanSignal(){
-
+humanSignal() {
+    echo ""
 }
 
 # Main that parses the user input
-main(){
-    init_install()
+main() {
+    init_install
 }
 
-## DOCKER FILE TEMPLATES FOR INITIAL APPS
+## DOCKER FILE TEMPLATES FOR APPS INITIALIZATION 
 CFS_DOCKER="
-FROM sync_fusion/builder AS builder
+# Links Docker build files togeter through 'tags'
+FROM sync_fusion AS builder
 
-RUN git clone https://github.com/nasa/cFS.git
-RUN cd cFS
+# Cloning cFS from Github
+RUN git clone https://github.com/nasa/cFS.git /root/cfs
+
+# Creating ros2_ws space
+WORKDIR /root/cfs
+
+# Downgrading to cFS 6.7.0a
+RUN git checkout v6.7.0a
+
+# Installing submodules
 RUN git submodule init
 RUN git submodule update
 
-COPY cfe/cmake/Makefile.sample Makefile
-COPY -r cfe/cmake/sample_defs sample_defs
+# Initial setup of cFS make and sample_defs
+RUN cp cfe/cmake/Makefile.sample Makefile
+RUN cp -r cfe/cmake/sample_defs sample_defs
 
-RUN sed -i 's/undef OSAL_DEBUG_PERMISSIVE_MODE/define OSAL_DEBUG_PERMISSIVE_MODE/g' sample_defs/default_osconfig.h
+# Copies over the initial apps from local space to the Docker image space
+COPY /cFS/apps /root/cfs/apps
+COPY /cFS/sample_defs /root/cfs/sample_defs
+
+# Changing the OSAL debug settings
+RUN sed -i 's/undef OSAL_DEBUG_PERMISSIVE_MODE/define OSAL_DEBUG_PERMISSIVE_MODE/g' /root/cfs/sample_defs/default_osconfig.h
+
+# Building cfs
+RUN make prep && make && make install
+
+# Resetting ros2_ws space
+WORKDIR /root/ros2_ws
+"
+
+YOLO_ROS="
+# Links Docker build files togeter through 'tags'
+FROM sync_fusion AS builder
+
+# Setting ros2_ws space
+WORKDIR /root/ros2_ws
+
+# Copying Yolo_ros into ROS2 workspace - this creates a default setting
+COPY ./ROS2/yolo_ros /root/ros2_ws/src/yolo_ros
+
+# Install dependencies
+RUN apt-get update
+RUN apt-get install python3-opencv -y 
+RUN apt-get install ros-humble-cv-bridge -y
+
+# Yolo ROS dependencies
+RUN pip3 install -r src/yolo_ros/requirements.txt
+RUN rosdep install --from-paths src --ignore-src -r -y
+RUN pip3 install sphinx==8.0.0 sphinx-rtd-theme==3.0.0
+
+# Downloading Yolov8
+RUN sudo apt-get install wget -y
+RUN wget -P /root/ https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8m.pt
+
+# TO-DO: Copy Troupe-Model Data here.
+
+# Colcon the workspace
+ARG CMAKE_BUILD_TYPE=Release
+RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
+"
+
+SYNC_NODE="
+# Links Docker build files togeter through 'tags'
+FROM sync_fusion AS builder
+
+# Setting ros2_ws space
+WORKDIR /root/ros2_ws
+
+# Copying Sync_Node files over to image - this creates a default setting
+COPY ./ROS2/sync_node /root/ros2_ws/src/sync_node
+
+# Insatalling RealSense camera libraries
+RUN apt install ros-humble-librealsense2* -y
+
+# Installing ROS2 RealSense2
+RUN apt install ros-humble-realsense2-* -y
+
+# Colcon the workspace
+ARG CMAKE_BUILD_TYPE=Release
+RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
+"
+
+RACS2_ROS="
+# Links Docker build files togeter through 'tags'
+FROM sync_fusion AS builder
+
+# Setting ros2_ws space
+WORKDIR /root/ros2_ws
+
+# Copying RACS2 into ROS2 workspace 
+COPY ./ROS2/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s /root/ros2_ws/src/bridge_py_s
+COPY ./ROS2/racs2_bridge/Example/Case.2/ROS2/racs2_msg /root/ros2_ws/src/racs2_msg
+COPY ./ROS2/racs2_bridge/Misc/ProtoBuffers /root/ros2_ws/src/ProtoBuffers
+
+# Preparing for WebSocket.
+RUN apt-get install libwebsockets-dev -y
+RUN pip install websockets
+
+# Preparing for Protocol Buffers.
+RUN apt-get install libwebsockets-dev -y
+RUN apt-get install protobuf-c-compiler -y
+RUN apt-get install libprotobuf-c-dev -y
+RUN pip install protobuf
+
+# Colcon the workspace
+ARG CMAKE_BUILD_TYPE=Release
+RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
 "
 
 # Runs the main function on start-up
