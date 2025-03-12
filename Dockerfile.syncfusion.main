@@ -10,5 +10,19 @@ RUN mkdir /root/img_data
 # Create ros2_ws space
 WORKDIR /root/ros2_ws
 
+# Installing general dependencies
+RUN apt-get update \
+    && apt-get -y --quiet --no-install-recommends install \
+    gcc \
+    git \
+    python3 \
+    python3-pip
+
+# Changing to compatible 'setuptools' for Python
+RUN pip install setuptools==58.2.0
+
+RUN apt-get upgrade -y
+RUN apt-get update
+
 # Run a default command, e.g., starting a bash shell
 CMD ["bash"]
