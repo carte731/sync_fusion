@@ -21,8 +21,5 @@ RUN apt-get update \
 # Changing to compatible 'setuptools' for Python
 RUN pip install setuptools==58.2.0
 
-RUN apt-get upgrade -y
-RUN apt-get update
-
 # Run a default command, e.g., starting a bash shell
 CMD ["bash"]
