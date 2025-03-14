@@ -133,7 +133,25 @@ cleanup(){
 
 # Prints/STDOUT the input commands for the shell script
 help() {
-    printf "\nHELP\n\n"
+    HELP_PROMPT="
+    Sync-Fusion
+        Used for mixed operating environment between ROS2, ROS1 and NASA Core Flight Software (cFS).
+        In particular, integration of ROS2 YOLO package with cFS for tracking assets conducting SLAM
+        on planetary bodies. Sync-Fusion works uses Docker to standardize the work environment - it uses a
+        decentralized image creation and runs the environment through decentralized compose files run from
+        the main 'sync-fusion' shell script.
+
+        See 'README' for more operating details.
+
+        COMMANDS:
+        -i OR --install: installs repos, generates basic Dockerfiles, docker-compose and installs image.
+        -ri OR --reinstall: Reinstalls images without generating Dockerfiles and docker-compose files.
+        -u OR --update: Reuploads the cFS app and ROS node directorys and recompiles the image.
+        -h OR --help: Prints this message out. 
+    
+    \n"
+
+    printf "${HELP_PROMPT}"
 }
 
 # Runs the Docker containers through segmented docker-compose files
@@ -186,10 +204,11 @@ main() {
                 execution_order+=(reinstall);;
             -u | --update)
                 execution_order+=(update);;
-            *)
-                printf "\n\nInvalid user input argument - Please try again...\n\n";;
             -h | --help)
                 execution_order+=(help);;
+            # Switch-case default
+            *)
+                printf "\n\nInvalid user input argument - Please try again...\n\n";;
         esac      
     done
 
