@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Grabbing current context
+# Grabbing current context and directory path
 HOME=$(pwd -P)
 
 # Setting cFS workspace
@@ -23,63 +23,107 @@ readonly \
     MISC
 
 # Initial install of the Docker image and cFS
-init_install() {
+install() {
     ## INITIAL SETUP
     # Downloads repo's submodules
     cd $HOME
     git submodule init
     git submodule update
 
-    ## GENERATING DOCKERFILS
-    # Creates default cFS Dockerfile
+    ## GENERATING DOCKERFILES
+    printf "\nGenerating core Sync-Fusion Dockerfiles and compose files... (Sync-Node, YOLO-ROS and cFS).\n\n"
+    # Creates default cFS Dockerfile and compose-file
     echo "$CFS_DOCKER" > "$CFS/Dockerfile.syncfusion.cFS"
+    echo "$CFS_COMPOSE" > "$CFS/docker-compose.syncfusion.cFS.yml"
 
-    # Creates default YOLO-ROS Dockerfile
+    # Creates default YOLO-ROS Dockerfile and compose-file
     echo "$YOLO_ROS" > "$ROS2/yolo_ros/Dockerfile.syncfusion.yoloROS"
+    echo "$YOLO_COMPOSE" > "$ROS2/yolo_ros/docker-compose.syncfusion.yoloROS.yml"
 
-    # Creates default Sync-Node Dockerfile
-    echo "$SYNC_NODE" > "$ROS2/sync_node/Dockerfile.syncfusion.syncnode"
+    # Creating YOLO-REALSENSE file for YOLO-ROS
+    echo "$YOLO_REALSENSE" > "$ROS2/yolo_ros/yolo_bringup/launch/yoloRealSense.launch.py"
+
+    # Creates default Sync-Node Dockerfile and compose-file
+    echo "$SYNC_ROS" > "$ROS2/sync_node/Dockerfile.syncfusion.syncnode"
+    echo "$SYNC_COMPOSE" > "$ROS2/sync_node/docker-compose.syncfusion.syncnode.yml"
 
     # Creates default JAXA-RACS2 Dockerfile
     # TO-DO: Needs to be updated first for full YOLO and image transfers
     #echo "$RACS2_ROS" > "$ROS2/Dockerfile.syncfusion.racs2"
+    #echo "$RACS2_COMPOSE" > "$ROS2/docker-compose.syncfusion.racs2.yml"
+
+    # Creates default JAXA-RACS1 Dockerfile
+
+    # Builds the Docker images
+    printf "\nInitial building of Docker Sync-Fusion image...\n\n"
+
+    # Installs Sync-Fusion Docker image from various dockerfiles
+    image_installation
+
+}
+
+# Complete reinstall of Docker image segments without generating Dockerfiles or docker-compose files
+reinstall(){
+    printf "\nReinstalling Sync-Fusion image without Dockerfile generation...\n\n"
+
+    # Just reinstalls image without generating files - in case of edits of docker files
+    image_installation
+}
+
+# Looks for Dockerfiles that follow correct format and installs the main file and it's segments
+image_installation(){   
+    # Checks if the main Dockerfile exist in main Sync-Fusion directory
+    if [ ! -f "${HOME}/Dockerfile.syncfusion.main" ]; then
+        printf "\nMain Docker file 'Dockerfile.syncfusion.main' doesn't exist...\n\n"
+        exit -1
+    fi
 
     ## BUILDING DOCKER IMAGE
     # Builds Docker base image for sync_fusion
     docker build -f $HOME/Dockerfile.syncfusion.main -t sync_fusion .
 
-    # Adds cFS onto the base Docker image
-    docker build -f $CFS/Dockerfile.syncfusion.cFS -t sync_fusion .
+    ## INSTALLING IMAGE SEGMENTS
+    # Retrieving all the Dockerfiles (excluding the main Dockerfile) that follow proper naming scheme
+    readarray -t dockerfile_array < <(find "${HOME}" -iname "Dockerfile.syncfusion.*" -and -not -name "Dockerfile.syncfusion.main")
 
-    ## INSTALLING ROS2 NODES
-    # Retrieving all the Dockerfiles in ROS2 that follow proper naming scheme
-    readarray -t ros2_app_array < <(find ./ROS2/ -iname "Dockerfile.syncfusion.*")
-
-    # Installs all nodes in ROS2 directory that follow proper naming convention for sync_fusion
-    for dockerfile in ${ros2_app_array[@]}; do
-        docker build -f "${dockerfile}" -t sync_fusion .
+    # Installs all image segments from various directories that follow proper naming convention for sync_fusion
+    for dockerfile in ${dockerfile_array[@]}; do
+        #docker build -f "${dockerfile}" -t sync_fusion .
+        docker build -f "${dockerfile}" --target builder -t sync_fusion .
+        docker build -f "${dockerfile}" --target compiler -t sync_fusion .
     done
 
-    ## INSTALLING ROS1 NODES
-    ## TO-DO: ADD ROS1 APP & TEST
-    # Retrieving all the Dockerfiles in ROS1 that follow proper naming scheme
-    #readarray -t ros1_app_array < <(find ./ROS1/ -iname "Dockerfile.syncfusion.*")
-
-    # Installs all nodes in ROS2 directory that follow proper naming convention for sync_fusion
-    #for dockerfile in ${ros1_app_array[@]}; do
-    #    docker build -f "${dockerfile}" -t sync_fusion/builder .
-    #done
-
-    # Removing dangling images from image construction
-    echo "\n\nRemoving dangling Docker images from image construction..\n\n"
-
-    docker rmi $(docker images -f "dangling=true" -q)
-
+    # cleaning up image install
+    cleanup
 }
 
 # Updates the Image if user adds new apps to ROS2, ROS1 or cFS 
 update() {
-    echo ""
+    printf "\nRebuilding Docker Sync-Fusion image with updates...\n\n"
+
+    # Checks if the main Dockerfile exist in main Sync-Fusion directory
+    if [ ! docker inspect --type=image "sync_fusion" &> /dev/null ]; then
+        printf "\nSync-Fusion image doesn't exist, please re/install Sync-Fusion...\n\n"
+        exit -1
+    fi
+
+    ## UPDATING IMAGE SEGMENTS
+    # Retrieving all the Dockerfiles (excluding the main Dockerfile) that follow proper naming scheme
+    readarray -t docker_update_array < <(find "${HOME}" -iname "Dockerfile.syncfusion.*" -and -not -name "Dockerfile.syncfusion.main")
+
+    # Installs all image segments from various directories that follow proper naming convention for sync_fusion
+    for dockerfile in ${docker_update_array[@]}; do
+        docker build -f "${dockerfile}" --target compiler -t sync_fusion .
+    done
+
+    # cleaning up image updates
+    cleanup
+}
+
+# Removes dangling images from image construction
+cleanup(){
+    printf "\nRemoving dangling Docker images from image construction...\n\n"
+    docker rmi $(docker images -f "dangling=true" -q)
 }
 
 # Prints/STDOUT the input commands for the shell script
@@ -89,7 +133,20 @@ help() {
 
 # Runs the Docker containers through segmented docker-compose files
 run() {
-    echo ""
+    # Grabing all the docker-compose files
+    readarray -t docker_compose_files < <(find "${HOME}" -iname "docker-compose.syncfusion.*.yml")
+
+    # The base command
+    base_CMD="docker compose"
+
+    # Taking the array of compose files and generating the command
+    for compose_file in ${docker_compose_files[@]}; do
+        base_CMD+=" -f ${compose_file}"
+    done
+
+    # Executing Docker compose command
+    eval "$base_CMD up"
+
 }
 
 # Exports the Docker image for embedded systems or systems without internet
@@ -107,9 +164,11 @@ humanSignal() {
     echo ""
 }
 
-# Main that parses the user input
+# Main that parses the user input arguments
 main() {
-    init_install
+    #install
+    #update
+    run
 }
 
 ## DOCKER FILE TEMPLATES FOR APPS INITIALIZATION 
@@ -120,7 +179,7 @@ FROM sync_fusion AS builder
 # Cloning cFS from Github
 RUN git clone https://github.com/nasa/cFS.git /root/cfs
 
-# Creating ros2_ws space
+# Setting the cFS workspace
 WORKDIR /root/cfs
 
 # Downgrading to cFS 6.7.0a
@@ -134,12 +193,18 @@ RUN git submodule update
 RUN cp cfe/cmake/Makefile.sample Makefile
 RUN cp -r cfe/cmake/sample_defs sample_defs
 
-# Copies over the initial apps from local space to the Docker image space
-COPY /cFS/apps /root/cfs/apps
-COPY /cFS/sample_defs /root/cfs/sample_defs
-
 # Changing the OSAL debug settings
 RUN sed -i 's/undef OSAL_DEBUG_PERMISSIVE_MODE/define OSAL_DEBUG_PERMISSIVE_MODE/g' /root/cfs/sample_defs/default_osconfig.h
+
+# Compile Docker stage
+FROM sync_fusion AS compiler
+
+# Setting the cFS workspace
+WORKDIR /root/cfs
+
+# Copies over the initial apps from local space to the Docker image space
+COPY ./cFS/apps /root/cfs/apps
+COPY ./cFS/sample_defs /root/cfs/sample_defs
 
 # Building cfs
 RUN make prep && make && make install
@@ -155,15 +220,13 @@ FROM sync_fusion AS builder
 # Setting ros2_ws space
 WORKDIR /root/ros2_ws
 
-# Copying Yolo_ros into ROS2 workspace - this creates a default setting
-COPY ./ROS2/yolo_ros /root/ros2_ws/src/yolo_ros
-
 # Install dependencies
 RUN apt-get update
 RUN apt-get install python3-opencv -y 
 RUN apt-get install ros-humble-cv-bridge -y
 
 # Yolo ROS dependencies
+COPY ./ROS2/yolo_ros/requirements.txt /root/ros2_ws/src/yolo_ros/requirements.txt
 RUN pip3 install -r src/yolo_ros/requirements.txt
 RUN rosdep install --from-paths src --ignore-src -r -y
 RUN pip3 install sphinx==8.0.0 sphinx-rtd-theme==3.0.0
@@ -172,6 +235,12 @@ RUN pip3 install sphinx==8.0.0 sphinx-rtd-theme==3.0.0
 RUN sudo apt-get install wget -y
 RUN wget -P /root/ https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8m.pt
 
+# Compile Docker stage
+FROM sync_fusion AS compiler
+
+# Copying Yolo_ros into ROS2 workspace - this creates a default setting
+COPY ./ROS2/yolo_ros /root/ros2_ws/src/yolo_ros
+
 # TO-DO: Copy Troupe-Model Data here.
 
 # Colcon the workspace
@@ -179,21 +248,24 @@ ARG CMAKE_BUILD_TYPE=Release
 RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
 "
 
-SYNC_NODE="
+SYNC_ROS="
 # Links Docker build files togeter through 'tags'
 FROM sync_fusion AS builder
 
 # Setting ros2_ws space
 WORKDIR /root/ros2_ws
 
-# Copying Sync_Node files over to image - this creates a default setting
-COPY ./ROS2/sync_node /root/ros2_ws/src/sync_node
-
-# Insatalling RealSense camera libraries
+# Installing RealSense camera libraries
 RUN apt install ros-humble-librealsense2* -y
 
 # Installing ROS2 RealSense2
 RUN apt install ros-humble-realsense2-* -y
+
+# Compile Docker stage
+FROM sync_fusion AS compiler
+
+# Copying Sync_Node files over to image - this creates a default setting
+COPY ./ROS2/sync_node /root/ros2_ws/src/sync_node
 
 # Colcon the workspace
 ARG CMAKE_BUILD_TYPE=Release
@@ -207,11 +279,6 @@ FROM sync_fusion AS builder
 # Setting ros2_ws space
 WORKDIR /root/ros2_ws
 
-# Copying RACS2 into ROS2 workspace 
-COPY ./ROS2/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s /root/ros2_ws/src/bridge_py_s
-COPY ./ROS2/racs2_bridge/Example/Case.2/ROS2/racs2_msg /root/ros2_ws/src/racs2_msg
-COPY ./ROS2/racs2_bridge/Misc/ProtoBuffers /root/ros2_ws/src/ProtoBuffers
-
 # Preparing for WebSocket.
 RUN apt-get install libwebsockets-dev -y
 RUN pip install websockets
@@ -222,9 +289,466 @@ RUN apt-get install protobuf-c-compiler -y
 RUN apt-get install libprotobuf-c-dev -y
 RUN pip install protobuf
 
+# Compile Docker stage
+FROM sync_fusion AS compiler
+
+# Copying RACS2 into ROS2 workspace 
+COPY ./ROS2/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s /root/ros2_ws/src/bridge_py_s
+COPY ./ROS2/racs2_bridge/Example/Case.2/ROS2/racs2_msg /root/ros2_ws/src/racs2_msg
+COPY ./ROS2/racs2_bridge/Misc/ProtoBuffers /root/ros2_ws/src/ProtoBuffers
+
 # Colcon the workspace
 ARG CMAKE_BUILD_TYPE=Release
 RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
+"
+
+TEMPLATE_DOCKERFILE="
+
+"
+
+## DOCKER COMPOSE TEMPLATES FOR APPS INITIALIZATION  
+CFS_COMPOSE="
+services:
+    core_flight_services:
+        image: sync_fusion:latest
+        container_name: core_flight_services
+        environment:
+            - ROS_DOMAIN_ID=55
+        entrypoint: [\"/bin/bash\",\"-c\"]
+        command: 
+            - |
+                cd /root/cfs/build/exe/cpu1/ && ./core-cpu1
+"
+
+YOLO_COMPOSE="
+services:
+    yolo_ros:
+        image: sync_fusion:latest
+        container_name: yolo_ros
+        environment:
+            - ROS_DOMAIN_ID=55
+        entrypoint: [\"/bin/bash\",\"-c\"]
+        command: 
+            - |
+                source ~/ros2_ws/install/setup.bash
+                ros2 launch yolo_bringup yoloRealSense.launch.py use_3d:=True
+        depends_on:
+            - real_sense
+"
+
+SYNC_COMPOSE="
+services:
+    real_sense:
+        image: sync_fusion:latest
+        container_name: real_sense
+        volumes:
+            # For X-11
+            - /tmp/.X11-unix:/tmp/.X11-unix:rw
+            # Share image volumes space - needed for swapping image data pointers with cFS 
+            - ./misc/img_data:/root/img_data:rw
+            # Realsense ADDED - CKC
+            - /dev:/dev:rw
+            #full media
+            - /media:/media:rw
+            #Time
+            - /etc/timezone:/etc/timezone:rw
+            - /etc/localtime:/etc/localtime:rw
+            - /sys:/sys:rw
+        device_cgroup_rules:
+            - 'c 81:* rmw'
+            - 'c 189:* rmw'  
+        environment:
+            - ROS_DOMAIN_ID=55
+            - DISPLAY=\$DISPLAY
+            - TERM
+            - QT_X11_NO_MITSHM=1
+        entrypoint: [\"/bin/bash\",\"-c\"]
+        command: 
+            - |
+                source ~/ros2_ws/install/setup.bash     
+                ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true
+    sync_node:
+        image: sync_fusion:latest
+        container_name: sync_node
+        volumes:
+            # For X-11
+            - /tmp/.X11-unix:/tmp/.X11-unix:rw
+            # Share image volumes space - needed for swapping image data pointers with cFS 
+            - ./misc/img_data:/root/img_data:rw
+        environment:
+            - ROS_DOMAIN_ID=55
+            - DISPLAY
+            - TERM
+            - QT_X11_NO_MITSHM=1
+        entrypoint: [\"/bin/bash\",\"-c\"]
+        command: 
+            - |
+                source ~/ros2_ws/install/setup.bash
+                ros2 run sync_node sync_node
+        depends_on:
+            - real_sense
+            - yolo_ros
+"
+
+RACS2_COMPOSE="
+services:
+    racs_bridge:
+        image: sync_fusion:latest
+        container_name: racs_bridge  
+        environment:
+            - ROS_DOMAIN_ID=55
+        entrypoint: [\"/bin/bash\",\"-c\"]
+        command: 
+            - |
+                source ~/ros2_ws/install/setup.bash 
+                ros2 run bridge_py_s bridge_py_s_node --ros-args --params-file ./src/bridge_py_s/config/params.yaml
+        depends_on:
+        - sync_node
+"
+
+RACS2_COMPOSE="
+
+"
+
+TEMPLATE_COMPOSE="
+
+"
+
+## YOLO-REALSENSE LAUNCH FILE TEMPLATE
+## TO-DO: SWAP OUT WITH THE LIGHTER LAUNCH CONFIGURATION FILE
+YOLO_REALSENSE="
+# Copyright (C) 2023  Miguel Ángel González Santamarta
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+from launch import LaunchDescription, LaunchContext
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
+from launch.conditions import IfCondition
+
+
+def generate_launch_description():
+
+    def run_yolo(context: LaunchContext, use_tracking, use_3d):
+
+        use_tracking = eval(context.perform_substitution(use_tracking))
+        use_3d = eval(context.perform_substitution(use_3d))
+
+        model_type = LaunchConfiguration(\"model_type\")
+        model_type_cmd = DeclareLaunchArgument(
+            \"model_type\",
+            default_value=\"YOLO\",
+            choices=[\"YOLO\", \"NAS\", \"World\"],
+            description=\"Model type form Ultralytics (YOLO, NAS)\",
+        )
+
+        model = LaunchConfiguration(\"model\")
+        model_cmd = DeclareLaunchArgument(
+            \"model\", default_value=\"/root/yolov8m.pt\", description=\"Model name or path\"
+        )
+
+        tracker = LaunchConfiguration(\"tracker\")
+        tracker_cmd = DeclareLaunchArgument(
+            \"tracker\",
+            default_value=\"bytetrack.yaml\",
+            description=\"Tracker name or path\",
+        )
+
+        device = LaunchConfiguration(\"device\")
+        device_cmd = DeclareLaunchArgument(
+            \"device\", default_value=\"cpu\", description=\"Device to use (GPU/CPU)\"
+        )
+
+        enable = LaunchConfiguration(\"enable\")
+        enable_cmd = DeclareLaunchArgument(
+            \"enable\", default_value=\"True\", description=\"Whether to start YOLO enabled\"
+        )
+
+        threshold = LaunchConfiguration(\"threshold\")
+        threshold_cmd = DeclareLaunchArgument(
+            \"threshold\",
+            default_value=\"0.5\",
+            description=\"Minimum probability of a detection to be published\",
+        )
+
+        iou = LaunchConfiguration(\"iou\")
+        iou_cmd = DeclareLaunchArgument(
+            \"iou\", default_value=\"0.7\", description=\"IoU threshold\"
+        )
+
+        imgsz_height = LaunchConfiguration(\"imgsz_height\")
+        imgsz_height_cmd = DeclareLaunchArgument(
+            \"imgsz_height\",
+            default_value=\"480\",
+            description=\"Image height for inference\",
+        )
+
+        imgsz_width = LaunchConfiguration(\"imgsz_width\")
+        imgsz_width_cmd = DeclareLaunchArgument(
+            \"imgsz_width\", default_value=\"640\", description=\"Image width for inference\"
+        )
+
+        half = LaunchConfiguration(\"half\")
+        half_cmd = DeclareLaunchArgument(
+            \"half\",
+            default_value=\"False\",
+            description=\"Whether to enable half-precision (FP16) inference speeding up model inference with minimal impact on accuracy\",
+        )
+
+        max_det = LaunchConfiguration(\"max_det\")
+        max_det_cmd = DeclareLaunchArgument(
+            \"max_det\",
+            default_value=\"300\",
+            description=\"Maximum number of detections allowed per image\",
+        )
+
+        augment = LaunchConfiguration(\"augment\")
+        augment_cmd = DeclareLaunchArgument(
+            \"augment\",
+            default_value=\"False\",
+            description=\"Whether to enable test-time augmentation (TTA) for predictions improving detection robustness at the cost of speed\",
+        )
+
+        agnostic_nms = LaunchConfiguration(\"agnostic_nms\")
+        agnostic_nms_cmd = DeclareLaunchArgument(
+            \"agnostic_nms\",
+            default_value=\"False\",
+            description=\"Whether to enable class-agnostic Non-Maximum Suppression (NMS) merging overlapping boxes of different classes\",
+        )
+
+        retina_masks = LaunchConfiguration(\"retina_masks\")
+        retina_masks_cmd = DeclareLaunchArgument(
+            \"retina_masks\",
+            default_value=\"False\",
+            description=\"Whether to use high-resolution segmentation masks if available in the model, enhancing mask quality for segmentation\",
+        )
+
+        input_image_topic = LaunchConfiguration(\"input_image_topic\")
+        input_image_topic_cmd = DeclareLaunchArgument(
+            \"input_image_topic\",
+            default_value=\"/camera/camera/color/image_raw\",
+            description=\"Name of the input image topic\",
+        )
+
+        image_reliability = LaunchConfiguration(\"image_reliability\")
+        image_reliability_cmd = DeclareLaunchArgument(
+            \"image_reliability\",
+            default_value=\"2\",
+            choices=[\"0\", \"1\", \"2\"],
+            description=\"Specific reliability QoS of the input image topic (0=system default, 1=Reliable, 2=Best Effort)\",
+        )
+
+        input_depth_topic = LaunchConfiguration(\"input_depth_topic\")
+        input_depth_topic_cmd = DeclareLaunchArgument(
+            \"input_depth_topic\",
+            default_value=\"/camera/camera/depth/image_rect_raw\",
+            #default_value=\"/camera/camera/aligned_depth_to_color/image_raw\",
+            description=\"Name of the input depth topic\",
+        )
+
+        depth_image_reliability = LaunchConfiguration(\"depth_image_reliability\")
+        depth_image_reliability_cmd = DeclareLaunchArgument(
+            \"depth_image_reliability\",
+            default_value=\"2\",
+            choices=[\"0\", \"1\", \"2\"],
+            description=\"Specific reliability QoS of the input depth image topic (0=system default, 1=Reliable, 2=Best Effort)\",
+        )
+
+        input_depth_info_topic = LaunchConfiguration(\"input_depth_info_topic\")
+        input_depth_info_topic_cmd = DeclareLaunchArgument(
+            \"input_depth_info_topic\",
+            default_value=\"/camera/camera/depth/camera_info\",
+            #default_value=\"/camera/camera/aligned_depth_to_color/camera_info\",
+            description=\"Name of the input depth info topic\",
+        )
+
+        depth_info_reliability = LaunchConfiguration(\"depth_info_reliability\")
+        depth_info_reliability_cmd = DeclareLaunchArgument(
+            \"depth_info_reliability\",
+            default_value=\"2\",
+            choices=[\"0\", \"1\", \"2\"],
+            description=\"Specific reliability QoS of the input depth info topic (0=system default, 1=Reliable, 2=Best Effort)\",
+        )
+
+        target_frame = LaunchConfiguration(\"target_frame\")
+        target_frame_cmd = DeclareLaunchArgument(
+            \"target_frame\",
+            default_value=\"camera_link\",
+            description=\"Target frame to transform the 3D boxes\",
+        )
+
+        depth_image_units_divisor = LaunchConfiguration(\"depth_image_units_divisor\")
+        depth_image_units_divisor_cmd = DeclareLaunchArgument(
+            \"depth_image_units_divisor\",
+            default_value=\"1000\",
+            description=\"Divisor used to convert the raw depth image values into metres\",
+        )
+
+        maximum_detection_threshold = LaunchConfiguration(\"maximum_detection_threshold\")
+        maximum_detection_threshold_cmd = DeclareLaunchArgument(
+            \"maximum_detection_threshold\",
+            default_value=\"0.3\",
+            description=\"Maximum detection threshold in the z axis\",
+        )
+
+        namespace = LaunchConfiguration(\"namespace\")
+        namespace_cmd = DeclareLaunchArgument(
+            \"namespace\", default_value=\"yolo\", description=\"Namespace for the nodes\"
+        )
+
+        use_debug = LaunchConfiguration(\"use_debug\")
+        use_debug_cmd = DeclareLaunchArgument(
+            \"use_debug\",
+            default_value=\"True\",
+            description=\"Whether to activate the debug node\",
+        )
+
+        # get topics for remap
+        detect_3d_detections_topic = \"detections\"
+        debug_detections_topic = \"detections\"
+
+        if use_tracking:
+            detect_3d_detections_topic = \"tracking\"
+
+        if use_tracking and not use_3d:
+            debug_detections_topic = \"tracking\"
+        elif use_3d:
+            debug_detections_topic = \"detections_3d\"
+
+        yolo_node_cmd = Node(
+            package=\"yolo_ros\",
+            executable=\"yolo_node\",
+            name=\"yolo_node\",
+            namespace=namespace,
+            parameters=[
+                {
+                    \"model_type\": model_type,
+                    \"model\": model,
+                    \"device\": device,
+                    \"enable\": enable,
+                    \"threshold\": threshold,
+                    \"iou\": iou,
+                    \"imgsz_height\": imgsz_height,
+                    \"imgsz_width\": imgsz_width,
+                    \"half\": half,
+                    \"max_det\": max_det,
+                    \"augment\": augment,
+                    \"agnostic_nms\": agnostic_nms,
+                    \"retina_masks\": retina_masks,
+                    \"image_reliability\": image_reliability,
+                }
+            ],
+            remappings=[(\"image_raw\", input_image_topic)],
+        )
+
+        tracking_node_cmd = Node(
+            package=\"yolo_ros\",
+            executable=\"tracking_node\",
+            name=\"tracking_node\",
+            namespace=namespace,
+            parameters=[{\"tracker\": tracker, \"image_reliability\": image_reliability}],
+            remappings=[(\"image_raw\", input_image_topic)],
+            condition=IfCondition(PythonExpression([str(use_tracking)])),
+        )
+
+        detect_3d_node_cmd = Node(
+            package=\"yolo_ros\",
+            executable=\"detect_3d_node\",
+            name=\"detect_3d_node\",
+            namespace=namespace,
+            parameters=[
+                {
+                    \"target_frame\": target_frame,
+                    \"maximum_detection_threshold\": maximum_detection_threshold,
+                    \"depth_image_units_divisor\": depth_image_units_divisor,
+                    \"depth_image_reliability\": depth_image_reliability,
+                    \"depth_info_reliability\": depth_info_reliability,
+                }
+            ],
+            remappings=[
+                (\"depth_image\", input_depth_topic),
+                (\"depth_info\", input_depth_info_topic),
+                (\"detections\", detect_3d_detections_topic),
+            ],
+            condition=IfCondition(PythonExpression([str(use_3d)])),
+        )
+
+        debug_node_cmd = Node(
+            package=\"yolo_ros\",
+            executable=\"debug_node\",
+            name=\"debug_node\",
+            namespace=namespace,
+            parameters=[{\"image_reliability\": image_reliability}],
+            remappings=[
+                (\"image_raw\", input_image_topic),
+                (\"detections\", debug_detections_topic),
+            ],
+            condition=IfCondition(PythonExpression([use_debug])),
+        )
+
+        return (
+            model_type_cmd,
+            model_cmd,
+            tracker_cmd,
+            device_cmd,
+            enable_cmd,
+            threshold_cmd,
+            iou_cmd,
+            imgsz_height_cmd,
+            imgsz_width_cmd,
+            half_cmd,
+            max_det_cmd,
+            augment_cmd,
+            agnostic_nms_cmd,
+            retina_masks_cmd,
+            input_image_topic_cmd,
+            image_reliability_cmd,
+            input_depth_topic_cmd,
+            depth_image_reliability_cmd,
+            input_depth_info_topic_cmd,
+            depth_info_reliability_cmd,
+            target_frame_cmd,
+            depth_image_units_divisor_cmd,
+            maximum_detection_threshold_cmd,
+            namespace_cmd,
+            use_debug_cmd,
+            yolo_node_cmd,
+            tracking_node_cmd,
+            detect_3d_node_cmd,
+            debug_node_cmd,
+        )
+
+    use_tracking = LaunchConfiguration(\"use_tracking\")
+    use_tracking_cmd = DeclareLaunchArgument(
+        \"use_tracking\", default_value=\"True\", description=\"Whether to activate tracking\"
+    )
+
+    use_3d = LaunchConfiguration(\"use_3d\")
+    use_3d_cmd = DeclareLaunchArgument(
+        \"use_3d\", default_value=\"False\", description=\"Whether to activate 3D detections\"
+    )
+
+    return LaunchDescription(
+        [
+            use_tracking_cmd,
+            use_3d_cmd,
+            OpaqueFunction(function=run_yolo, args=[use_tracking, use_3d]),
+        ]
+    )
+
 "
 
 # Runs the main function on start-up
