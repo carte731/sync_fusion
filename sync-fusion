@@ -30,8 +30,28 @@ install() {
     git submodule init
     git submodule update
 
+    generate_templates
+
+    # Builds the Docker images
+    printf "\nInitial building of Docker Sync-Fusion image...\n\n"
+
+    # Installs Sync-Fusion Docker image from various dockerfiles
+    image_installation
+
+}
+
+# Complete reinstall of Docker image segments without generating Dockerfiles or docker-compose files
+reinstall(){
+    printf "\nReinstalling Sync-Fusion image without Dockerfile generation...\n\n"
+
+    # Just reinstalls image without generating files - in case of edits of docker files
+    image_installation
+}
+
+generate_templates(){
     ## GENERATING DOCKERFILES
     printf "\nGenerating core Sync-Fusion Dockerfiles and compose files... (Sync-Node, YOLO-ROS and cFS).\n\n"
+
     # Creates default cFS Dockerfile and compose-file
     echo "$CFS_DOCKER" > "$CFS/Dockerfile.syncfusion.cFS"
     echo "$CFS_COMPOSE" > "$CFS/docker-compose.syncfusion.cFS.yml"
@@ -53,21 +73,7 @@ install() {
     #echo "$RACS2_COMPOSE" > "$ROS2/docker-compose.syncfusion.racs2.yml"
 
     # Creates default JAXA-RACS1 Dockerfile
-
-    # Builds the Docker images
-    printf "\nInitial building of Docker Sync-Fusion image...\n\n"
-
-    # Installs Sync-Fusion Docker image from various dockerfiles
-    image_installation
-
-}
-
-# Complete reinstall of Docker image segments without generating Dockerfiles or docker-compose files
-reinstall(){
-    printf "\nReinstalling Sync-Fusion image without Dockerfile generation...\n\n"
-
-    # Just reinstalls image without generating files - in case of edits of docker files
-    image_installation
+    # TO-DO: Integrate RACS1 for ROS1
 }
 
 # Looks for Dockerfiles that follow correct format and installs the main file and it's segments
@@ -88,7 +94,6 @@ image_installation(){
 
     # Installs all image segments from various directories that follow proper naming convention for sync_fusion
     for dockerfile in ${dockerfile_array[@]}; do
-        #docker build -f "${dockerfile}" -t sync_fusion .
         docker build -f "${dockerfile}" --target builder -t sync_fusion .
         docker build -f "${dockerfile}" --target compiler -t sync_fusion .
     done
@@ -128,7 +133,7 @@ cleanup(){
 
 # Prints/STDOUT the input commands for the shell script
 help() {
-    echo ""
+    printf "\nHELP\n\n"
 }
 
 # Runs the Docker containers through segmented docker-compose files
@@ -166,9 +171,33 @@ humanSignal() {
 
 # Main that parses the user input arguments
 main() {
-    #install
-    #update
-    run
+    # Creates a local array for user commands passed through arguments.
+    # This allows the user to stack commands and create pipelines of commands
+    local execution_order=()
+
+    # Iterates over the user input arguments - $@ is the user input argument Bash variable
+    for arg in $@; do
+        # Parses out user input arguments
+        # Note: ,, forces the string to lowercase
+        case "${arg,,}" in
+            -i | --install)
+                execution_order+=(install);;
+            -ri | --reinstall)
+                execution_order+=(reinstall);;
+            -u | --update)
+                execution_order+=(update);;
+            *)
+                printf "\n\nInvalid user input argument - Please try again...\n\n";;
+            -h | --help)
+                execution_order+=(help);;
+        esac      
+    done
+
+    # Goes through CLI arguments and executes the commands
+    for cmds in ${execution_order[@]}; do
+        $cmds
+    done
+
 }
 
 ## DOCKER FILE TEMPLATES FOR APPS INITIALIZATION 
@@ -751,5 +780,6 @@ def generate_launch_description():
 
 "
 
-# Runs the main function on start-up
-main
+# Runs the main function on start-up.
+# With the user arguments passed to the main function.
+main "$@"
