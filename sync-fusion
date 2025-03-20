@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Grabbing current context and directory path
-HOME=$(pwd -P)
+#HOME=$(pwd -P)
+HOME="$( cd "$( dirname "${BASH_SOURCE[0]}" )" > /dev/null && pwd -P )" ## Location of the script
 
 # Setting cFS workspace
 CFS="$HOME/cFS"
@@ -198,6 +199,8 @@ main() {
         # Parses out user input arguments
         # Note: ,, forces the string to lowercase
         case "${arg,,}" in
+            -r | --run)
+                execution_order+=(run);;
             -i | --install)
                 execution_order+=(install);;
             -ri | --reinstall)
@@ -360,6 +363,8 @@ services:
     core_flight_services:
         image: sync_fusion:latest
         container_name: core_flight_services
+        volumes:
+            - ${HOME}/misc/img_data:/root/img_data:rw
         environment:
             - ROS_DOMAIN_ID=55
         entrypoint: [\"/bin/bash\",\"-c\"]
@@ -393,7 +398,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - ./misc/img_data:/root/img_data:rw
+            - .${HOME}/misc/img_data:/root/img_data:rw
             # Realsense ADDED - CKC
             - /dev:/dev:rw
             #full media
@@ -422,7 +427,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - ./misc/img_data:/root/img_data:rw
+            - .${HOME}/misc/img_data:/root/img_data:rw
         environment:
             - ROS_DOMAIN_ID=55
             - DISPLAY
