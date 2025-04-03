@@ -364,7 +364,7 @@ services:
         image: sync_fusion:latest
         container_name: core_flight_services
         volumes:
-            - ${HOME}/misc/img_data:/root/img_data:rw
+            - /${HOME}/misc/img_data:/root/img_data:rw
         environment:
             - ROS_DOMAIN_ID=55
         entrypoint: [\"/bin/bash\",\"-c\"]
@@ -398,7 +398,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - .${HOME}/misc/img_data:/root/img_data:rw
+            - /${HOME}/misc/img_data:/root/img_data:rw
             # Realsense ADDED - CKC
             - /dev:/dev:rw
             #full media
@@ -427,7 +427,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - .${HOME}/misc/img_data:/root/img_data:rw
+            - /${HOME}/misc/img_data:/root/img_data:rw
         environment:
             - ROS_DOMAIN_ID=55
             - DISPLAY
