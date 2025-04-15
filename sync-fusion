@@ -639,7 +639,7 @@ def generate_launch_description():
         target_frame = LaunchConfiguration(\"target_frame\")
         target_frame_cmd = DeclareLaunchArgument(
             \"target_frame\",
-            default_value=\"camera_link\",
+            default_value=\"camera_color_optical_frame\",
             description=\"Target frame to transform the 3D boxes\",
         )
 
