@@ -70,8 +70,8 @@ generate_templates(){
 
     # Creates default JAXA-RACS2 Dockerfile
     # TO-DO: Needs to be updated first for full YOLO and image transfers
-    #echo "$RACS2_ROS" > "$ROS2/Dockerfile.syncfusion.racs2"
-    #echo "$RACS2_COMPOSE" > "$ROS2/docker-compose.syncfusion.racs2.yml"
+    echo "$RACS2_ROS" > "$MISC/racs2_bridge/Dockerfile.syncfusion.racs2"
+    echo "$RACS2_COMPOSE" > "$MISC/racs2_bridge/docker-compose.syncfusion.racs2.yml"
 
     # Creates default JAXA-RACS1 Dockerfile
     # TO-DO: Integrate RACS1 for ROS1
@@ -147,6 +147,7 @@ help() {
         COMMANDS:
         -i OR --install: installs repos, generates basic Dockerfiles, docker-compose and installs image.
         -ri OR --reinstall: Reinstalls images without generating Dockerfiles and docker-compose files.
+        -r OR --run: Runs the Docker containers with 'Docker-Compose'.
         -u OR --update: Reuploads the cFS app and ROS node directorys and recompiles the image.
         -h OR --help: Prints this message out. 
     
@@ -330,23 +331,20 @@ FROM sync_fusion AS builder
 # Setting ros2_ws space
 WORKDIR /root/ros2_ws
 
-# Preparing for WebSocket.
-RUN apt-get install libwebsockets-dev -y
-RUN pip install websockets
-
-# Preparing for Protocol Buffers.
-RUN apt-get install libwebsockets-dev -y
-RUN apt-get install protobuf-c-compiler -y
-RUN apt-get install libprotobuf-c-dev -y
-RUN pip install protobuf
-
 # Compile Docker stage
 FROM sync_fusion AS compiler
 
 # Copying RACS2 into ROS2 workspace 
-COPY ./ROS2/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s /root/ros2_ws/src/bridge_py_s
-COPY ./ROS2/racs2_bridge/Example/Case.2/ROS2/racs2_msg /root/ros2_ws/src/racs2_msg
-COPY ./ROS2/racs2_bridge/Misc/ProtoBuffers /root/ros2_ws/src/ProtoBuffers
+COPY ./misc/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s /root/ros2_ws/src/bridge_py_s
+COPY ./misc/racs2_bridge/Example/Case.2/ROS2/racs2_msg /root/ros2_ws/src/racs2_msg
+COPY ./misc/racs2_bridge/Misc/ProtoBuffers /root/ros2_ws/src/ProtoBuffers
+
+# Copying RACS2 apps intoo cFS workspace
+COPY ./misc/racs2_bridge/cFS/Bridge/Client_C/apps/racs2_bridge_client /root/cfs/apps
+COPY ./misc/racs2_bridge/cFS/Bridge/Client_C/sample_defs/racs2_bridge_config.txt /root/cfs/sample_defs
+
+# REMOVE LATER - only used for testing
+COPY ./misc/racs2_bridge/Example/Case.2/cFS/apps/sample_listener /root/cfs/apps
 
 # Colcon the workspace
 ARG CMAKE_BUILD_TYPE=Release
@@ -362,15 +360,18 @@ CFS_COMPOSE="
 services:
     core_flight_services:
         image: sync_fusion:latest
-        container_name: core_flight_services
+        container_name: cfs_con
         volumes:
-            - /${HOME}/misc/img_data:/root/img_data:rw
+            - /${MISC}/img_data:/root/img_data:rw
+            - /${CFS}/sample_defs/racs2_bridge_config.txt:/root/cfs/build/exe/cpu1/cf/racs2_bridge_config.txt:rw
         environment:
             - ROS_DOMAIN_ID=55
-        entrypoint: [\"/bin/bash\",\"-c\"]
+        entrypoint: ["/bin/bash","-c"]
         command: 
             - |
                 cd /root/cfs/build/exe/cpu1/ && ./core-cpu1
+        depends_on:
+            - jaxa_con
 "
 
 YOLO_COMPOSE="
@@ -398,7 +399,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - /${HOME}/misc/img_data:/root/img_data:rw
+            - /${MISC}/img_data:/root/img_data:rw
             # Realsense ADDED - CKC
             - /dev:/dev:rw
             #full media
@@ -427,7 +428,7 @@ services:
             # For X-11
             - /tmp/.X11-unix:/tmp/.X11-unix:rw
             # Share image volumes space - needed for swapping image data pointers with cFS 
-            - /${HOME}/misc/img_data:/root/img_data:rw
+            - /${MISC}/img_data:/root/img_data:rw
         environment:
             - ROS_DOMAIN_ID=55
             - DISPLAY
@@ -445,23 +446,20 @@ services:
 
 RACS2_COMPOSE="
 services:
-    racs_bridge:
+    jaxa_racs_bridge:
         image: sync_fusion:latest
-        container_name: racs_bridge  
+        container_name: jaxa_con
+        volumes:
+            - /${MISC}/racs2_bridge/ROS2/Bridge/Server_Python/bridge_py_s/config/params.yaml:/root/ros2_ws/src/bridge_py_s/config/params.yaml:rw        
         environment:
             - ROS_DOMAIN_ID=55
-        entrypoint: [\"/bin/bash\",\"-c\"]
+        entrypoint: ["/bin/bash","-c"]
         command: 
             - |
                 source ~/ros2_ws/install/setup.bash 
                 ros2 run bridge_py_s bridge_py_s_node --ros-args --params-file ./src/bridge_py_s/config/params.yaml
-        depends_on:
-        - sync_node
 "
 
-RACS2_COMPOSE="
-
-"
 
 TEMPLATE_COMPOSE="
 
