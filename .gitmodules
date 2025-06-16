@@ -22,3 +22,7 @@
 [submodule "ROS2/yolo_ros"]
 	path = ROS2/yolo_ros
 	url = git@github.com:mgonzs13/yolo_ros.git
+[submodule "misc/racs2_bridge"]
+	path = misc/racs2_bridge
+	url = git@github.com:carte731/racs2_bridge.git
+	branch = TroupeBridge
